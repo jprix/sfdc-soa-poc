@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:sqs="http://www.mulesoft.org/schema/mule/sqs" xmlns:sfdc="http://www.mulesoft.org/schema/mule/sfdc" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:context="http://www.springframework.org/schema/context" xmlns:objectstore="http://www.mulesoft.org/schema/mule/objectstore" xmlns:json="http://www.mulesoft.org/schema/mule/json" xmlns:https="http://www.mulesoft.org/schema/mule/https" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.5.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/https http://www.mulesoft.org/schema/mule/https/current/mule-https.xsd
+http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd
+http://www.mulesoft.org/schema/mule/objectstore http://www.mulesoft.org/schema/mule/objectstore/1.0/mule-objectstore.xsd
+http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-current.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/sfdc http://www.mulesoft.org/schema/mule/sfdc/current/mule-sfdc.xsd
+http://www.mulesoft.org/schema/mule/sqs http://www.mulesoft.org/schema/mule/sqs/1.0/mule-sqs.xsd">
+    <sfdc:config name="Salesforce" username="adrian.hsieh+developer@mulesoft.com" password="frensworkz2014" securityToken="ApjE1O8kAKwiro10Wto37j47D"  doc:name="Salesforce">
+        <sfdc:connection-pooling-profile initialisationPolicy="INITIALISE_ONE" exhaustedAction="WHEN_EXHAUSTED_GROW"/>
+    </sfdc:config>
+    <context:property-placeholder location="mule.properties,mule.credentials.properties"/>
+    <sqs:config name="Amazon_SQS" accessKey="${amazon.sqs.access.key}" secretKey="${amazon.sqs.secret.key}" queueName="frensworkz-poc" region="USEAST1" doc:name="Amazon SQS">
+        <sqs:connection-pooling-profile initialisationPolicy="INITIALISE_ONE" exhaustedAction="WHEN_EXHAUSTED_GROW"/>
+    </sqs:config>
+    <flow name="sfdc-soa-poc-apiFlow2" doc:name="sfdc-soa-poc-apiFlow2" processingStrategy="synchronous">
+        <poll doc:name="Poll">
+            <fixed-frequency-scheduler frequency="${duration.minute}" startDelay="${initial.delay.minute}" timeUnit="MINUTES"/>
+            <watermark variable="watermark" default-expression="#['2014-02-04T00:00:00.000Z']" update-expression="#[payload]"/>
+            <processor-chain doc:name="Processor Chain">
+                <enricher source="#[payload]" target="#[flowVars['servertime']]" doc:name="Message Enricher">
+                    <sfdc:get-server-timestamp config-ref="Salesforce" doc:name="Get server timestamp"/>
+                </enricher>
+            	<sfdc:query config-ref="Salesforce" query="Select Name, Company from Lead where LastModifiedDate &gt; #[flowVars['watermark']]" doc:name="query"/>
+		        <foreach doc:name="For Each">
+                    <json:object-to-json-transformer doc:name="Object to JSON"/>
+		            <sqs:send-message config-ref="Amazon_SQS" doc:name="Amazon SQS"/>
+		        </foreach>
+                <expression-transformer expression="#[new org.mule.el.datetime.DateTime(flowVars['servertime'])]" doc:name="Expression"/>
+                <expression-transformer expression="#[payload.format('yyyy-MM-dd\'T\'hh:mm:00.000Z')]" doc:name="Expression"/>        
+            </processor-chain>
+        </poll>
+        <logger message="Polling Complete" level="INFO" doc:name="Logger"/>
+    </flow>
+</mule>
